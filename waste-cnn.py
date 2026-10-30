@@ -13,7 +13,7 @@ class RecyclingDataset(Dataset):
         self.data = hf_dataset
 
         self.transform = v2.Compose([
-            v2.Resize((26, 26)),
+            v2.Resize((52, 52)),
             v2.ToImage(),
             v2.ToDtype(torch.float32, scale=True),
         ])
@@ -44,16 +44,18 @@ train_dataset = RecyclingDataset(ds["train"])
 val_dataset = RecyclingDataset(ds["validation"])
 test_dataset = RecyclingDataset(ds["test"])
 
-batch_size = 16
+batch_size = 64
 
 train_loader = DataLoader(
     train_dataset,
-    batch_size=batch_size
+    batch_size=batch_size,
+    shuffle=True
 )
 
 test_loader = DataLoader(
     test_dataset,
-    batch_size=batch_size
+    batch_size=batch_size,
+    shuffle=True
 )
 
 device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
@@ -66,11 +68,11 @@ class NeuralNetwork(nn.Module):
         super().__init__()
         self.flatten = nn.Flatten()
         self.linear_relu_stack = nn.Sequential(
-            nn.Linear(26*26*3, 512), # affine linear transformation
+            nn.Linear(52*52*3, 2048), # affine linear transformation
             nn.ReLU(), # clamp (0, x)
-            nn.Linear(512, 512), # intermediate step after ReLU trans, 512 to 512
+            nn.Linear(2048, 2048), # intermediate step after ReLU trans, 2048 to 2048
             nn.ReLU(),
-            nn.Linear(512, 6) # final output step, maps 512 to 6 outputs (or classifications?)
+            nn.Linear(2048, 6) # final output step, maps 2048 to 6 outputs (or classifications?)
         )
 
     def forward(self, x):
@@ -79,11 +81,11 @@ class NeuralNetwork(nn.Module):
         return logits
 
 model = NeuralNetwork().to(device)
-model.load_state_dict(torch.load("model.pth", weights_only=True))
+model.load_state_dict(torch.load("modelV2.pth", weights_only=True))
 print(model)
 
 loss_fn = nn.CrossEntropyLoss()
-optimizer = torch.optim.SGD(model.parameters(), lr=1e-3)
+optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, weight_decay=1e-4)
 
 def train(dataloader, model, loss_fn, optimizer):
     size = len(dataloader.dataset)
@@ -119,15 +121,15 @@ def test(dataloader, model, loss_fn):
     correct /= size
     print(f"Test Error: \n Accuracy: {(100*correct):>0.1f}%, Avg loss: {test_loss:>8f} \n")
 
-epochs = 5
+epochs = 10
 for t in range(epochs):
     print(f"Epoch {t+1}\n-------------------------------")
     train(train_loader, model, loss_fn, optimizer)
     test(test_loader, model, loss_fn)
 print("Done!")
 
-torch.save(model.state_dict(), "model.pth")
-print("Saved PyTorch Model State to model.pth")
+torch.save(model.state_dict(), "modelV2.pth")
+print("Saved PyTorch Model State to modelV2.pth")
 
 classes = [
     "biodegradable",
@@ -139,7 +141,7 @@ classes = [
 ]
 
 model.eval()
-x, y = val_dataset[10]
+x, y = val_dataset[53]
 x = x.unsqueeze(0).to(device)
 
 model.eval()
